@@ -4,6 +4,7 @@
 #include <fstream>
 #include <set>
 #include <limits>
+#include <math.h>
 
 #include "Utils.h"
 #include "GlobalDefines.h"
@@ -150,7 +151,34 @@ namespace RC
 
     float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const cv::Point2i& pos)
     {
-        return 0.f;
+        float mDijX, mDijY, pDijX, pDijY;
+        float minVal = -std::numeric_limits<float>::max();
+
+        if (pos.x > 0)  mDijX = mTimes.at<float> (pos.y, pos.x) - mTimes.at<float> (pos.y, pos.x - 1);
+        else            mDijX = minVal;
+        if (pos.y > 0)  mDijY = mTimes.at<float> (pos.y, pos.x) - mTimes.at<float> (pos.y - 1, pos.x);
+        else            mDijY = minVal;
+        if (pos.x < mTimes.cols - 1)    pDijX = mTimes.at<float> (pos.y, pos.x) - mTimes.at<float> (pos.y, pos.x + 1);
+        else                            pDijX = minVal;
+        if (pos.y < mTimes.rows - 1)    pDijY = mTimes.at<float> (pos.y, pos.x) - mTimes.at<float> (pos.y + 1, pos.x);
+        else                            pDijY = minVal;
+
+
+
+    }
+
+    void computeForceField(const cv::Mat& mData, cv::Mat& forceField)
+    {
+        float std_dev = .1f;
+        float c1 = 1.f / (std_dev * std::sqrt(2.f * M_PI));
+        float c2 = 1.f / (2.f * std_dev * std_dev);
+        cv::Laplacian (mData, forceField, CV_32F, 9);
+        for (int r = 0; r < forceField.rows; r ++)
+            for (int c = 0; c  < forceField.cols; c++)
+            {
+                float gr = forceField.at<float> (r, c);
+                forceField.at<float> (r, c) = c1 * exp (-c2 * (gr * gr));
+            }
     }
 
     void computeSilhouette (const cv::Mat& mData, cv::Mat& silhouette)
@@ -164,8 +192,11 @@ namespace RC
         std::multiset<BoundaryNode, BoundaryNodeComparer> boundary;
         /// computing the image gradient = force field
         cv::Mat mForce (uiTEMPMATROWS, uiTEMPMATCOLS, CV_32F, 0.f);
-        cv::Laplacian (mData, mForce, CV_32F, 9);
+        computeForceField (mData, mForce);
         silhouette = std::numeric_limits<float>::max();
+        /// initializing the algorithm in the top left corner (0, 0)
+
+
 
         boundary.insert(BoundaryNode());
         while (!boundary.empty())

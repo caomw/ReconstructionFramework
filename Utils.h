@@ -57,6 +57,8 @@ namespace RC
 
     bool computeImage (const cv::Mat& mData, const COLOR_PALETTE& cpMap, const std::string& sFileName, bool bLog);
 
+    void computeForceField (const cv::Mat& mData, cv::Mat& forceField);
+
     float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const cv::Point2i& pos);
 
     void computeSilhouette (const cv::Mat& mData, cv::Mat& silhouette);
