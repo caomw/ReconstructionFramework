@@ -49,6 +49,14 @@ namespace RC
         }
     };
 
+    struct ReconstructionFrameworkException : public std::exception
+    {
+       std::string s;
+       ReconstructionFrameworkException(std::string ss) : s(ss) {}
+       ~ReconstructionFrameworkException() throw () {} // Updated
+       const char* what() const throw() { return s.c_str(); }
+    };
+
     void loadPalette (const COLOR_PALETTE& cpMap, std::vector<cv::Point3f>& vColors);
 
     void compute3DRay (const cv::Point2f& pPoint, const CameraInfo& ciCamInfo, Ray3D& rRay);

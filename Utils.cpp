@@ -151,20 +151,38 @@ namespace RC
 
     float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const cv::Point2i& pos)
     {
-        float mDijX, mDijY, pDijX, pDijY;
-        float minVal = -std::numeric_limits<float>::max();
+        float Tij, T1, T2, fij = mForceField.at<float> (pos.y, pos.x);
 
-        if (pos.x > 0)  mDijX = mTimes.at<float> (pos.y, pos.x) - mTimes.at<float> (pos.y, pos.x - 1);
-        else            mDijX = minVal;
-        if (pos.y > 0)  mDijY = mTimes.at<float> (pos.y, pos.x) - mTimes.at<float> (pos.y - 1, pos.x);
-        else            mDijY = minVal;
-        if (pos.x < mTimes.cols - 1)    pDijX = mTimes.at<float> (pos.y, pos.x) - mTimes.at<float> (pos.y, pos.x + 1);
-        else                            pDijX = minVal;
-        if (pos.y < mTimes.rows - 1)    pDijY = mTimes.at<float> (pos.y, pos.x) - mTimes.at<float> (pos.y + 1, pos.x);
-        else                            pDijY = minVal;
+        if (pos.y == 0)
+            T1 = mTimes.at<float> (pos.y + 1, pos.x);
+        else if (pos.y == mTimes.rows - 1)
+            T1 = mTimes.at<float> (pos.y - 1, pos.x);
+        else
+            T1 = std::min (mTimes.at<float>(pos.y - 1, pos.x), mTimes.at<float>(pos.y + 1, pos.x));
 
+        if (pos.x == 0)
+            T2 = mTimes.at<float> (pos.y, pos.x + 1);
+        else if (pos.x == mTimes.cols - 1)
+            T2 = mTimes.at<float> (pos.y, pos.x - 1);
+        else
+            T2 = std::min (mTimes.at<float>(pos.y, pos.x - 1), mTimes.at<float>(pos.y, pos.x + 1));
 
+        if (T1 == std::numeric_limits<float>::max() && T2 == std::numeric_limits<float>::max())
+            throw ReconstructionFrameworkException ("unexpected situation");
 
+        if (T1 == std::numeric_limits<float>::max () ||
+            T2 == std::numeric_limits<float>::max ())
+            Tij = fij + std::min (T1, T2);
+        else
+        {
+            float s1, s2;
+            float D = 4.f * ((T1 + T2) * (T1 + T2)) - 8.f * (T1 * T1 + T2 * T2);
+            s1 = (2.f * (T1 + T2) + sqrt (D)) / 4.f;
+            s2 = (2.f * (T1 + T2) - sqrt (D)) / 4.f;
+            Tij = std::min (s1, s2);
+        }
+
+        return Tij;
     }
 
     void computeForceField(const cv::Mat& mData, cv::Mat& forceField)
@@ -174,15 +192,18 @@ namespace RC
         float c2 = 1.f / (2.f * std_dev * std_dev);
         cv::Laplacian (mData, forceField, CV_32F, 9);
         for (int r = 0; r < forceField.rows; r ++)
+        {
             for (int c = 0; c  < forceField.cols; c++)
             {
                 float gr = forceField.at<float> (r, c);
                 forceField.at<float> (r, c) = c1 * exp (-c2 * (gr * gr));
             }
+        }
     }
 
     void computeSilhouette (const cv::Mat& mData, cv::Mat& silhouette)
     {
+        /// posible directions
         cv::Point2i disp [4];
         disp[0] = cv::Point2i (-1, 0);
         disp[1] = cv::Point2i (0, -1);
