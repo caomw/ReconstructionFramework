@@ -109,8 +109,8 @@ namespace RC
         cv::Mat mImg (uiTEMPMATROWS, uiTEMPMATCOLS, CV_8UC3);
         if (bLog)
         {
-            fMin = log (fMin);
-            fMax = log (fMax);
+            fMin = log (fMin + 1.f);
+            fMax = log (fMax + 1.f);
         }
 
         for (uint row = 0; row < uiTEMPMATROWS; row ++)
@@ -119,7 +119,7 @@ namespace RC
             {
                 fVal =  pData [row * uiTEMPMATCOLS + col];
                 if (bLog)
-                    fVal = log (fVal);
+                    fVal = log (fVal + 1.f);
                 fRatio = (fVal - fMin) / (fMax - fMin);
                 uiIdx = uint (fRatio * (float)(vColors.size() - 1));
                 mImg.data [row * mImg.step + col * mImg.channels() + 0] = uint(vColors[uiIdx].z);
@@ -151,6 +151,62 @@ namespace RC
 
     float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const cv::Point2i& pos)
     {
+        if ((pos.x == 2 && pos.y == 4) ||
+            (pos.x == 3 && pos.y == 4))
+        {
+            printf ("llegue\n");
+        }
+        float Tij, fij = mForceField.at<float> (pos.y, pos.x), A = 0.f, B = 0.f, C = -(fij * fij);
+        float Tijp = std::numeric_limits<float>::max ();
+        float Tijm = std::numeric_limits<float>::max ();
+        float Tipj = std::numeric_limits<float>::max ();
+        float Timj = std::numeric_limits<float>::max ();
+
+        if (pos.y < (mTimes.rows - 1))
+            Tipj = mTimes.at<float> (pos.y + 1, pos.x);
+        if (pos.y > 0)
+            Timj = mTimes.at<float> (pos.y - 1, pos.x);
+        if (pos.x < (mTimes.cols - 1))
+            Tijp = mTimes.at<float> (pos.y, pos.x + 1);
+        if (pos.x > 0)
+            Tijm = mTimes.at<float> (pos.y, pos.x - 1);
+
+        if (Timj != std::numeric_limits<float>::max ())
+        {
+            A += 1.f;
+            B -= 2.f * Timj;
+            C += (Timj * Timj);
+        }
+        if (Tijm != std::numeric_limits<float>::max ())
+        {
+            A += 1.f;
+            B -= 2.f * Tijm;
+            C += (Tijm * Tijm);
+        }
+        if (Tipj != std::numeric_limits<float>::max ())
+        {
+            A += 1.f;
+            B -= 2.f * Tipj;
+            C += (Tipj * Tipj);
+        }
+        if (Tijp != std::numeric_limits<float>::max ())
+        {
+            A += 1.f;
+            B -= 2.f * Tijp;
+            C += (Tijp * Tijp);
+        }
+
+        float D = (B * B) - (4.f * A * C);
+        if (D < 0.f)
+            throw ReconstructionFrameworkException ("unexpected situation: negative discriminant");
+        float s1 = (-B + sqrt(D))/(2.f * A);
+        float s2 = (-B - sqrt(D))/(2.f * A);
+        Tij = std::max (s1, s2);
+        if (Tij < 0.f)
+            throw ReconstructionFrameworkException ("unexpected situation: negative solution");
+        return Tij;
+
+/*
         float Tij, T1, T2, fij = mForceField.at<float> (pos.y, pos.x);
 
         if (pos.y == 0)
@@ -168,35 +224,62 @@ namespace RC
             T2 = std::min (mTimes.at<float>(pos.y, pos.x - 1), mTimes.at<float>(pos.y, pos.x + 1));
 
         if (T1 == std::numeric_limits<float>::max() && T2 == std::numeric_limits<float>::max())
-            throw ReconstructionFrameworkException ("unexpected situation");
+            throw ReconstructionFrameworkException ("unexpected situation: isolated pixel");
 
-        if (T1 == std::numeric_limits<float>::max () ||
+        if (pos.x == 0 || pos.y == 0 ||
+            pos.x == mTimes.cols - 1 || pos.y == mTimes.rows - 1 ||
+            T1 == std::numeric_limits<float>::max () ||
             T2 == std::numeric_limits<float>::max ())
             Tij = fij + std::min (T1, T2);
         else
         {
             float s1, s2;
-            float D = 4.f * ((T1 + T2) * (T1 + T2)) - 8.f * (T1 * T1 + T2 * T2);
+            float D = 4.f * ((T1 + T2) * (T1 + T2)) - 8.f * (T1 * T1 + T2 * T2 - fij * fij);
+            if (D < 0.f)
+                throw ReconstructionFrameworkException ("unexpected situation: negative discriminant");
             s1 = (2.f * (T1 + T2) + sqrt (D)) / 4.f;
             s2 = (2.f * (T1 + T2) - sqrt (D)) / 4.f;
             Tij = std::min (s1, s2);
+            if (Tij < 0.f)
+                throw ReconstructionFrameworkException ("unexpected situation: negative solution");
         }
 
         return Tij;
+*/
     }
 
     void computeForceField(const cv::Mat& mData, cv::Mat& forceField)
     {
-        float std_dev = .1f;
+        float std_dev = .25f, gradient, value;
         float c1 = 1.f / (std_dev * std::sqrt(2.f * M_PI));
         float c2 = 1.f / (2.f * std_dev * std_dev);
         cv::Laplacian (mData, forceField, CV_32F, 9);
+        /// normalizing the laplacian
+        float minVal = std::numeric_limits<float>::max(), maxVal = -minVal;
+        for (unsigned int r = 0; r < forceField.rows; r++)
+            for (unsigned int c = 0; c < forceField.cols; c++)
+            {
+                float f = forceField.at<float> (r, c);
+                if (f < minVal)
+                    minVal = f;
+                if (f > maxVal)
+                    maxVal = f;
+            }
+        for (unsigned int r = 0; r < forceField.rows; r++)
+            for (unsigned int c = 0; c < forceField.cols; c++)
+            {
+                float f = forceField.at<float> (r, c);
+                forceField.at<float> (r, c) = ((f - minVal) / (maxVal - minVal));
+            }
+
+        computeImage (forceField, PALETTE_GREY, "/home/tomas/Documents/output/laplacian.bmp", false);
         for (int r = 0; r < forceField.rows; r ++)
         {
             for (int c = 0; c  < forceField.cols; c++)
             {
-                float gr = forceField.at<float> (r, c);
-                forceField.at<float> (r, c) = c1 * exp (-c2 * (gr * gr));
+                gradient = forceField.at<float> (r, c);
+                value = c1 * exp (-c2 * (gradient * gradient));
+                forceField.at<float> (r, c) = value;
             }
         }
     }
@@ -214,32 +297,46 @@ namespace RC
         /// computing the image gradient = force field
         cv::Mat mForce (uiTEMPMATROWS, uiTEMPMATCOLS, CV_32F, 0.f);
         computeForceField (mData, mForce);
+        computeImage (mData, PALETTE_GREY, "/home/tomas/Documents/output/image.bmp", false);
+        computeImage (mForce, PALETTE_GREY, "/home/tomas/Documents/output/force_field.bmp", false);
         silhouette = std::numeric_limits<float>::max();
         /// initializing the algorithm in the top left corner (0, 0)
-
-
-
-        boundary.insert(BoundaryNode());
-        while (!boundary.empty())
+        std::vector<cv::Point2i> vInitSol;
+        vInitSol.push_back(cv::Point2i (0, 0));
+        /// init
+        for (unsigned int i = 0; i < vInitSol.size(); i++)
+        {
+            accepted[vInitSol[i].y * uiTEMPMATCOLS + vInitSol[i].x] = true;
+            silhouette.at<float> (vInitSol[i].y, vInitSol[i].x) = 0.f;
+            BoundaryNode node (vInitSol[i], 0.f);
+            boundary.insert (node);
+        }
+        /// loop
+        int iNumIter = 0;
+        while (!boundary.empty() && iNumIter < 5000)
         {
             std::multiset<BoundaryNode, BoundaryNodeComparer>::iterator it = boundary.begin();
             BoundaryNode head = *it;
-            silhouette.at<float>(head.pos.y, head.pos.x) = head.t;
-            accepted[head.pos.y * uiTEMPMATCOLS + head.pos.x] = true;
-            /// checking the neighboring elements
-            for (unsigned int i = 0; i < 4; i++)
+            boundary.erase (it);
+            /// checking neighboring elements
+            for (unsigned int i = 0; i < 4; i ++)
             {
                 cv::Point2i pos = head.pos + disp[i];
                 if (pos.x >= 0 && pos.x < uiTEMPMATROWS &&
                     pos.y >= 0 && pos.y < uiTEMPMATROWS &&
                     !accepted[pos.y * uiTEMPMATCOLS + pos.x])
                 {
-
+                    float t = computeEikonal (mForce, silhouette, pos);
+                    t = std::min (t, silhouette.at<float> (pos.y, pos.x));
+                    silhouette.at<float> (pos.y, pos.x) = t;
+                    boundary.insert (BoundaryNode (pos, t));
                 }
             }
-            boundary.erase(it);
+            accepted [head.pos.y * uiTEMPMATCOLS + head.pos.x] = true;
+            ++ iNumIter;
         }
-
+        /// debug code
+        computeImage (silhouette, PALETTE_GREY, "/home/tomas/Documents/output/silhouette.bmp", true);
     }
 
     /// Debug methods
