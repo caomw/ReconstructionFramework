@@ -326,8 +326,12 @@ namespace RC
         }
         /// loop
         int iNumIter = 0;
+
+        /// TODO: CHECK std::multiset. THERE IS SOMETHING VERY FISHY HERE !!!!
+
         while (!boundary.empty() && iNumIter < 50000)
         {
+            printf ("%d\t", boundary.size());
             std::multiset<BoundaryNode, BoundaryNodeComparer>::iterator it;
             it = boundary.begin();
             BoundaryNode head = *it;
