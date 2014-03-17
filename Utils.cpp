@@ -149,28 +149,42 @@ namespace RC
         fout.close ();
     }
 
-    float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const cv::Point2i& pos)
+    float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const std::vector<bool>& accepted, const cv::Point2i& pos)
     {
-        if ((pos.x == 2 && pos.y == 4) ||
-            (pos.x == 3 && pos.y == 4))
+        if (pos.x == 286 && pos.y == 1)
         {
             printf ("llegue\n");
         }
+
         float Tij, fij = mForceField.at<float> (pos.y, pos.x), A = 0.f, B = 0.f, C = -(fij * fij);
         float Tijp = std::numeric_limits<float>::max ();
         float Tijm = std::numeric_limits<float>::max ();
         float Tipj = std::numeric_limits<float>::max ();
         float Timj = std::numeric_limits<float>::max ();
 
-        if (pos.y < (mTimes.rows - 1))
+        if (pos.y < (mTimes.rows - 1) && accepted[(pos.y + 1) * uiTEMPMATCOLS + pos.x])
             Tipj = mTimes.at<float> (pos.y + 1, pos.x);
-        if (pos.y > 0)
+        if (pos.y > 0 && accepted[(pos.y - 1) * uiTEMPMATCOLS + pos.x])
             Timj = mTimes.at<float> (pos.y - 1, pos.x);
-        if (pos.x < (mTimes.cols - 1))
+        if (pos.x < (mTimes.cols - 1) && accepted[pos.y * uiTEMPMATCOLS + pos.x + 1])
             Tijp = mTimes.at<float> (pos.y, pos.x + 1);
-        if (pos.x > 0)
+        if (pos.x > 0 && accepted[pos.y * uiTEMPMATCOLS + pos.x - 1])
             Tijm = mTimes.at<float> (pos.y, pos.x - 1);
 
+        float T1 = std::min (Timj, Tipj), T2 = std::min (Tijm, Tijp);
+        if (T1 != std::numeric_limits<float>::max ())
+        {
+            A += 1.f;
+            B -= 2.f * T1;
+            C += (T1 * T1);
+        }
+        if (T2 != std::numeric_limits<float>::max ())
+        {
+            A += 1.f;
+            B -= 2.f * T2;
+            C += (T2 * T2);
+        }
+/*
         if (Timj != std::numeric_limits<float>::max ())
         {
             A += 1.f;
@@ -195,13 +209,12 @@ namespace RC
             B -= 2.f * Tijp;
             C += (Tijp * Tijp);
         }
+*/
 
         float D = (B * B) - (4.f * A * C);
         if (D < 0.f)
             throw ReconstructionFrameworkException ("unexpected situation: negative discriminant");
-        float s1 = (-B + sqrt(D))/(2.f * A);
-        float s2 = (-B - sqrt(D))/(2.f * A);
-        Tij = std::max (s1, s2);
+        Tij = (-B + sqrt(D))/(2.f * A);
         if (Tij < 0.f)
             throw ReconstructionFrameworkException ("unexpected situation: negative solution");
         return Tij;
@@ -313,11 +326,14 @@ namespace RC
         }
         /// loop
         int iNumIter = 0;
-        while (!boundary.empty() && iNumIter < 5000)
+        while (!boundary.empty() && iNumIter < 50000)
         {
-            std::multiset<BoundaryNode, BoundaryNodeComparer>::iterator it = boundary.begin();
+            std::multiset<BoundaryNode, BoundaryNodeComparer>::iterator it;
+            it = boundary.begin();
             BoundaryNode head = *it;
             boundary.erase (it);
+//            printf (" %d %d %f\n", head.pos.y, head.pos.x, head.t);
+            accepted [head.pos.y * uiTEMPMATCOLS + head.pos.x] = true;
             /// checking neighboring elements
             for (unsigned int i = 0; i < 4; i ++)
             {
@@ -326,17 +342,35 @@ namespace RC
                     pos.y >= 0 && pos.y < uiTEMPMATROWS &&
                     !accepted[pos.y * uiTEMPMATCOLS + pos.x])
                 {
-                    float t = computeEikonal (mForce, silhouette, pos);
-                    t = std::min (t, silhouette.at<float> (pos.y, pos.x));
+                    BoundaryNode node (pos);
+                    node.t = -1.f;
+                    it = boundary.find(node);
+                    if (it != boundary.end())
+                    {
+                        node = *it;
+                        boundary.erase(it);
+                    }
+                    float t = computeEikonal (mForce, silhouette, accepted, pos);
+//                    printf (" %d %d %f\n", pos.y, pos.x, t);
+                    node.t = t;
                     silhouette.at<float> (pos.y, pos.x) = t;
-                    boundary.insert (BoundaryNode (pos, t));
+                    boundary.insert (node);
                 }
             }
-            accepted [head.pos.y * uiTEMPMATCOLS + head.pos.x] = true;
             ++ iNumIter;
         }
         /// debug code
-        computeImage (silhouette, PALETTE_GREY, "/home/tomas/Documents/output/silhouette.bmp", true);
+        std::ofstream fout ("/home/tomas/Documents/output/test.txt");
+        for (int r = 0; r < silhouette.rows; r ++)
+        {
+            for (int c = 0; c < silhouette.cols; c++)
+            {
+                fout << silhouette.at<float> (r, c) << "\t";
+            }
+            fout << "\n";
+        }
+        fout.close();
+        computeImage (silhouette, PALETTE_GREY, "/home/tomas/Documents/output/silhouette.bmp", false);
     }
 
     /// Debug methods

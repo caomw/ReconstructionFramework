@@ -34,10 +34,20 @@ namespace RC
             t = 0.f;
         }
 
+        BoundaryNode (cv::Point2i p)
+        {
+            this->pos = p;
+        }
+
         BoundaryNode (cv::Point2i p, float t)
         {
             this->pos = p;
             this->t = t;
+        }
+
+        bool operator == (const BoundaryNode& rhs) const
+        {
+            return (this->pos == rhs.pos);
         }
     };
 
@@ -67,7 +77,7 @@ namespace RC
 
     void computeForceField (const cv::Mat& mData, cv::Mat& forceField);
 
-    float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const cv::Point2i& pos);
+    float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const std::vector<bool>& accepted, const cv::Point2i& pos);
 
     void computeSilhouette (const cv::Mat& mData, cv::Mat& silhouette);
 
