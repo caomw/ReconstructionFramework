@@ -12,7 +12,7 @@ namespace RC
     static const uint uiTEMPMATCOLS = 384;
     static const uint uiTEMPMATROWS = 288;
     static const uint uiNImages = 435;
-    static const std::string sPalettePath ("/home/tomas/Documents/data/palette/");
+    static const std::string sPalettePath ("/home/cloud/Documents/paletten/");
 
     static const cv::Point2f pPrincipalPoint (192.f, 144.f);
 }

@@ -11,6 +11,9 @@
 
 namespace RC
 {
+
+#define TOL_VALUE 1e-3f
+
     void loadPalette (const COLOR_PALETTE& cpMap, std::vector<cv::Point3f>& vColors)
     {
         std::string sImgName = "";
@@ -151,11 +154,6 @@ namespace RC
 
     float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const std::vector<bool>& accepted, const cv::Point2i& pos)
     {
-        if (pos.x == 286 && pos.y == 1)
-        {
-            printf ("llegue\n");
-        }
-
         float Tij, fij = mForceField.at<float> (pos.y, pos.x), A = 0.f, B = 0.f, C = -(fij * fij);
         float Tijp = std::numeric_limits<float>::max ();
         float Tijm = std::numeric_limits<float>::max ();
@@ -212,6 +210,8 @@ namespace RC
 */
 
         float D = (B * B) - (4.f * A * C);
+        if (abs (D) < TOL_VALUE)
+            D = 0.f;
         if (D < 0.f)
             throw ReconstructionFrameworkException ("unexpected situation: negative discriminant");
         Tij = (-B + sqrt(D))/(2.f * A);
@@ -285,7 +285,7 @@ namespace RC
                 forceField.at<float> (r, c) = ((f - minVal) / (maxVal - minVal));
             }
 
-        computeImage (forceField, PALETTE_GREY, "/home/tomas/Documents/output/laplacian.bmp", false);
+        computeImage (forceField, PALETTE_GREY, "/home/cloud/Documents/output/laplacian.bmp", false);
         for (int r = 0; r < forceField.rows; r ++)
         {
             for (int c = 0; c  < forceField.cols; c++)
@@ -310,8 +310,8 @@ namespace RC
         /// computing the image gradient = force field
         cv::Mat mForce (uiTEMPMATROWS, uiTEMPMATCOLS, CV_32F, 0.f);
         computeForceField (mData, mForce);
-        computeImage (mData, PALETTE_GREY, "/home/tomas/Documents/output/image.bmp", false);
-        computeImage (mForce, PALETTE_GREY, "/home/tomas/Documents/output/force_field.bmp", false);
+        computeImage (mData, PALETTE_GREY, "/home/cloud/Documents/output/image.bmp", false);
+        computeImage (mForce, PALETTE_GREY, "/home/cloud/Documents/output/force_field.bmp", false);
         silhouette = std::numeric_limits<float>::max();
         /// initializing the algorithm in the top left corner (0, 0)
         std::vector<cv::Point2i> vInitSol;
@@ -331,7 +331,7 @@ namespace RC
 
         while (!boundary.empty() && iNumIter < 50000)
         {
-            printf ("%d\t", boundary.size());
+//            printf ("%d\t", boundary.size());
             std::multiset<BoundaryNode, BoundaryNodeComparer>::iterator it;
             it = boundary.begin();
             BoundaryNode head = *it;
@@ -347,7 +347,7 @@ namespace RC
                     !accepted[pos.y * uiTEMPMATCOLS + pos.x])
                 {
                     BoundaryNode node (pos);
-                    node.t = -1.f;
+                    node.t = silhouette.at<float> (pos.y, pos.x);
                     it = boundary.find(node);
                     if (it != boundary.end())
                     {
@@ -364,7 +364,7 @@ namespace RC
             ++ iNumIter;
         }
         /// debug code
-        std::ofstream fout ("/home/tomas/Documents/output/test.txt");
+        std::ofstream fout ("/home/cloud/Documents/output/test.txt");
         for (int r = 0; r < silhouette.rows; r ++)
         {
             for (int c = 0; c < silhouette.cols; c++)
@@ -374,7 +374,7 @@ namespace RC
             fout << "\n";
         }
         fout.close();
-        computeImage (silhouette, PALETTE_GREY, "/home/tomas/Documents/output/silhouette.bmp", false);
+        computeImage (silhouette, PALETTE_GREY, "/home/cloud/Documents/output/silhouette.bmp", false);
     }
 
     /// Debug methods
