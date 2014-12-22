@@ -108,6 +108,8 @@ namespace RC
 
         fMin = *std::min_element (pData, pData + (uiTEMPMATROWS * uiTEMPMATCOLS));
         fMax = *std::max_element (pData, pData + (uiTEMPMATROWS * uiTEMPMATCOLS));
+        if (fMax == std::numeric_limits<float>::infinity())
+            fMax = 30.f;
 
         cv::Mat mImg (uiTEMPMATROWS, uiTEMPMATCOLS, CV_8UC3);
         if (bLog)
@@ -121,9 +123,14 @@ namespace RC
             for (uint col = 0; col < uiTEMPMATCOLS; col ++)
             {
                 fVal =  pData [row * uiTEMPMATCOLS + col];
-                if (bLog)
-                    fVal = log (fVal + 1.f);
-                fRatio = (fVal - fMin) / (fMax - fMin);
+                if (fVal == std::numeric_limits<float>::infinity())
+                    fRatio = 1.f;
+                else
+                {
+                    if (bLog)
+                        fVal = log (fVal + 1.f);
+                    fRatio = (fVal - fMin) / (fMax - fMin);
+                }
                 uiIdx = uint (fRatio * (float)(vColors.size() - 1));
                 mImg.data [row * mImg.step + col * mImg.channels() + 0] = uint(vColors[uiIdx].z);
                 mImg.data [row * mImg.step + col * mImg.channels() + 1] = uint(vColors[uiIdx].y);
@@ -152,113 +159,47 @@ namespace RC
         fout.close ();
     }
 
-    float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const std::vector<bool>& accepted, const cv::Point2i& pos)
+    void updateCoefficients (const float T, float& A, float& B, float& C)
     {
-        float Tij, fij = mForceField.at<float> (pos.y, pos.x), A = 0.f, B = 0.f, C = -(fij * fij);
-        float Tijp = std::numeric_limits<float>::max ();
-        float Tijm = std::numeric_limits<float>::max ();
-        float Tipj = std::numeric_limits<float>::max ();
-        float Timj = std::numeric_limits<float>::max ();
+        A += 1.f;
+        B -= 2.f * T;
+        C += (T * T);
+    }
 
-        if (pos.y < (mTimes.rows - 1) && accepted[(pos.y + 1) * uiTEMPMATCOLS + pos.x])
+    float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const std::vector<bool>& vAccepted, const cv::Point2i& pos)
+    {
+        float INF = std::numeric_limits<float>::infinity();
+        float Tij, fij = mForceField.at<float> (pos.y, pos.x), A = 0.f, B = 0.f, C = -(fij * fij);
+        float Tijp = INF;
+        float Tijm = INF;
+        float Tipj = INF;
+        float Timj = INF;
+
+        if (pos.y < (mTimes.rows - 1) && vAccepted[(pos.y + 1) * uiTEMPMATCOLS + pos.x])
             Tipj = mTimes.at<float> (pos.y + 1, pos.x);
-        if (pos.y > 0 && accepted[(pos.y - 1) * uiTEMPMATCOLS + pos.x])
+        if (pos.y > 0 && vAccepted[(pos.y - 1) * uiTEMPMATCOLS + pos.x])
             Timj = mTimes.at<float> (pos.y - 1, pos.x);
-        if (pos.x < (mTimes.cols - 1) && accepted[pos.y * uiTEMPMATCOLS + pos.x + 1])
+        if (pos.x < (mTimes.cols - 1) && vAccepted[pos.y * uiTEMPMATCOLS + pos.x + 1])
             Tijp = mTimes.at<float> (pos.y, pos.x + 1);
-        if (pos.x > 0 && accepted[pos.y * uiTEMPMATCOLS + pos.x - 1])
+        if (pos.x > 0 && vAccepted[pos.y * uiTEMPMATCOLS + pos.x - 1])
             Tijm = mTimes.at<float> (pos.y, pos.x - 1);
 
-        float T1 = std::min (Timj, Tipj), T2 = std::min (Tijm, Tijp);
-        if (T1 != std::numeric_limits<float>::max ())
-        {
-            A += 1.f;
-            B -= 2.f * T1;
-            C += (T1 * T1);
-        }
-        if (T2 != std::numeric_limits<float>::max ())
-        {
-            A += 1.f;
-            B -= 2.f * T2;
-            C += (T2 * T2);
-        }
-/*
-        if (Timj != std::numeric_limits<float>::max ())
-        {
-            A += 1.f;
-            B -= 2.f * Timj;
-            C += (Timj * Timj);
-        }
-        if (Tijm != std::numeric_limits<float>::max ())
-        {
-            A += 1.f;
-            B -= 2.f * Tijm;
-            C += (Tijm * Tijm);
-        }
-        if (Tipj != std::numeric_limits<float>::max ())
-        {
-            A += 1.f;
-            B -= 2.f * Tipj;
-            C += (Tipj * Tipj);
-        }
-        if (Tijp != std::numeric_limits<float>::max ())
-        {
-            A += 1.f;
-            B -= 2.f * Tijp;
-            C += (Tijp * Tijp);
-        }
-*/
+        if (Tijm != INF)
+            updateCoefficients(Tijm, A, B, C);
+        if (Tijp != INF)
+            updateCoefficients(Tijp, A, B, C);
+        if (Timj != INF)
+            updateCoefficients(Timj, A, B, C);
+        if (Tipj != INF)
+            updateCoefficients(Tipj, A, B, C);
 
         float D = (B * B) - (4.f * A * C);
-        if (abs (D) < TOL_VALUE)
-            D = 0.f;
         if (D < 0.f)
             throw ReconstructionFrameworkException ("unexpected situation: negative discriminant");
         Tij = (-B + sqrt(D))/(2.f * A);
         if (Tij < 0.f)
             throw ReconstructionFrameworkException ("unexpected situation: negative solution");
         return Tij;
-
-/*
-        float Tij, T1, T2, fij = mForceField.at<float> (pos.y, pos.x);
-
-        if (pos.y == 0)
-            T1 = mTimes.at<float> (pos.y + 1, pos.x);
-        else if (pos.y == mTimes.rows - 1)
-            T1 = mTimes.at<float> (pos.y - 1, pos.x);
-        else
-            T1 = std::min (mTimes.at<float>(pos.y - 1, pos.x), mTimes.at<float>(pos.y + 1, pos.x));
-
-        if (pos.x == 0)
-            T2 = mTimes.at<float> (pos.y, pos.x + 1);
-        else if (pos.x == mTimes.cols - 1)
-            T2 = mTimes.at<float> (pos.y, pos.x - 1);
-        else
-            T2 = std::min (mTimes.at<float>(pos.y, pos.x - 1), mTimes.at<float>(pos.y, pos.x + 1));
-
-        if (T1 == std::numeric_limits<float>::max() && T2 == std::numeric_limits<float>::max())
-            throw ReconstructionFrameworkException ("unexpected situation: isolated pixel");
-
-        if (pos.x == 0 || pos.y == 0 ||
-            pos.x == mTimes.cols - 1 || pos.y == mTimes.rows - 1 ||
-            T1 == std::numeric_limits<float>::max () ||
-            T2 == std::numeric_limits<float>::max ())
-            Tij = fij + std::min (T1, T2);
-        else
-        {
-            float s1, s2;
-            float D = 4.f * ((T1 + T2) * (T1 + T2)) - 8.f * (T1 * T1 + T2 * T2 - fij * fij);
-            if (D < 0.f)
-                throw ReconstructionFrameworkException ("unexpected situation: negative discriminant");
-            s1 = (2.f * (T1 + T2) + sqrt (D)) / 4.f;
-            s2 = (2.f * (T1 + T2) - sqrt (D)) / 4.f;
-            Tij = std::min (s1, s2);
-            if (Tij < 0.f)
-                throw ReconstructionFrameworkException ("unexpected situation: negative solution");
-        }
-
-        return Tij;
-*/
     }
 
     void computeForceField(const cv::Mat& mData, cv::Mat& forceField)
@@ -285,7 +226,7 @@ namespace RC
                 forceField.at<float> (r, c) = ((f - minVal) / (maxVal - minVal));
             }
 
-        computeImage (forceField, PALETTE_GREY, "/home/cloud/Documents/output/laplacian.bmp", false);
+        computeImage (forceField, PALETTE_GREY, sOutputPath + "laplacian.bmp", false);
         for (int r = 0; r < forceField.rows; r ++)
         {
             for (int c = 0; c  < forceField.cols; c++)
@@ -310,9 +251,9 @@ namespace RC
         /// computing the image gradient = force field
         cv::Mat mForce (uiTEMPMATROWS, uiTEMPMATCOLS, CV_32F, 0.f);
         computeForceField (mData, mForce);
-        computeImage (mData, PALETTE_GREY, "/home/cloud/Documents/output/image.bmp", false);
-        computeImage (mForce, PALETTE_GREY, "/home/cloud/Documents/output/force_field.bmp", false);
-        silhouette = std::numeric_limits<float>::max();
+        computeImage (mData, PALETTE_GREY, sOutputPath + "image.bmp", false);
+        computeImage (mForce, PALETTE_GREY, sOutputPath + "force_field.bmp", false);
+        silhouette = std::numeric_limits<float>::infinity();
         /// initializing the algorithm in the top left corner (0, 0)
         std::vector<cv::Point2i> vInitSol;
         vInitSol.push_back(cv::Point2i (0, 0));
@@ -326,45 +267,43 @@ namespace RC
         }
         /// loop
         int iNumIter = 0;
-
-        /// TODO: CHECK std::multiset. THERE IS SOMETHING VERY FISHY HERE !!!!
-
-        while (!boundary.empty() && iNumIter < 50000)
+        while (!boundary.empty())
         {
-//            printf ("%d\t", boundary.size());
-            std::multiset<BoundaryNode, BoundaryNodeComparer>::iterator it;
-            it = boundary.begin();
-            BoundaryNode head = *it;
-            boundary.erase (it);
-//            printf (" %d %d %f\n", head.pos.y, head.pos.x, head.t);
+            std::multiset<BoundaryNode, BoundaryNodeComparer>::iterator queueIt, neighborIt;
+            queueIt = boundary.begin();
+            BoundaryNode head = *queueIt;
             accepted [head.pos.y * uiTEMPMATCOLS + head.pos.x] = true;
+            boundary.erase (queueIt);
             /// checking neighboring elements
             for (unsigned int i = 0; i < 4; i ++)
             {
                 cv::Point2i pos = head.pos + disp[i];
-                if (pos.x >= 0 && pos.x < uiTEMPMATROWS &&
+                if (pos.x >= 0 && pos.x < uiTEMPMATCOLS &&
                     pos.y >= 0 && pos.y < uiTEMPMATROWS &&
                     !accepted[pos.y * uiTEMPMATCOLS + pos.x])
                 {
                     BoundaryNode node (pos);
+                    bool far = true;
                     node.t = silhouette.at<float> (pos.y, pos.x);
-                    it = boundary.find(node);
-                    if (it != boundary.end())
+                    neighborIt = boundary.find(node);
+                    if (neighborIt != boundary.end())
                     {
-                        node = *it;
-                        boundary.erase(it);
+                        far = false;
+                        node = *neighborIt;
                     }
                     float t = computeEikonal (mForce, silhouette, accepted, pos);
-//                    printf (" %d %d %f\n", pos.y, pos.x, t);
                     node.t = t;
                     silhouette.at<float> (pos.y, pos.x) = t;
-                    boundary.insert (node);
+                    if (far)
+                        boundary.insert (node);
                 }
             }
             ++ iNumIter;
         }
         /// debug code
-        std::ofstream fout ("/home/cloud/Documents/output/test.txt");
+        printf (" Finished after %d iteraciones", iNumIter);
+/*
+        std::ofstream fout ((sOutputPath + "test.txt").c_str());
         for (int r = 0; r < silhouette.rows; r ++)
         {
             for (int c = 0; c < silhouette.cols; c++)
@@ -374,7 +313,8 @@ namespace RC
             fout << "\n";
         }
         fout.close();
-        computeImage (silhouette, PALETTE_GREY, "/home/cloud/Documents/output/silhouette.bmp", false);
+*/
+        computeImage (silhouette, PALETTE_GREY, sOutputPath + "silhouette.bmp", false);
     }
 
     /// Debug methods

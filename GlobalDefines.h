@@ -13,6 +13,8 @@ namespace RC
     static const uint uiTEMPMATROWS = 288;
     static const uint uiNImages = 435;
     static const std::string sPalettePath ("/home/cloud/Documents/paletten/");
+    static const std::string sThermalPath ("/home/cloud/Documents/ThermalData/");
+    static const std::string sOutputPath ("/home/cloud/Documents/output/");
 
     static const cv::Point2f pPrincipalPoint (192.f, 144.f);
 }

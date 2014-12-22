@@ -77,7 +77,7 @@ namespace RC
 
     void computeForceField (const cv::Mat& mData, cv::Mat& forceField);
 
-    float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const std::vector<bool>& accepted, const cv::Point2i& pos);
+    float computeEikonal (const cv::Mat& mForceField, const cv::Mat& mTimes, const std::vector<bool> &vAccepted, const cv::Point2i& pos);
 
     void computeSilhouette (const cv::Mat& mData, cv::Mat& silhouette);
 
